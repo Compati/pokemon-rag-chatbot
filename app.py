@@ -42,7 +42,7 @@ class PokemonRAGChatbot:
 
         return normalized
 
-    def answer(self, user_message: str, history: list[list[str]] | None = None) -> str:
+    def answer(self, user_message: str, history: list[list[str]] | None = None) -> tuple[str, str | None]:
         normalized_history = self._normalize_history(history)
         results = self.retriever.search(user_message, top_k=5)
         context = format_context(results)
@@ -62,7 +62,15 @@ class PokemonRAGChatbot:
         )
         messages.append({"role": "user", "content": prompt})
 
-        return self.llm_client.chat(messages)
+        answer_text = self.llm_client.chat(messages)
+        
+        # Extract image_url from top result if available
+        image_url = None
+        if results and len(results) > 0:
+            top_metadata = results[0].document.get("metadata", {})
+            image_url = top_metadata.get("image_url")
+        
+        return answer_text, image_url
 
 
 def build_bot(model_name: str = "llama3.2") -> PokemonRAGChatbot:
@@ -81,20 +89,50 @@ def build_bot(model_name: str = "llama3.2") -> PokemonRAGChatbot:
 def main() -> None:
     bot = build_bot()
 
-    def chat_fn(message: str, history: list[list[str]]) -> str:
-        return bot.answer(message, history)
-
-    demo = gr.ChatInterface(
-        fn=chat_fn,
-        title="Pokemon RAG Chatbot",
-        description="Ask questions about Pokemon using locally retrieved Pokedex data and an Ollama model.",
-        examples=[
-            "What type is Pikachu?",
-            "Compare Bulbasaur and Charmander.",
-            "Tell me about Gengar.",
-            "Which retrieved Pokemon has the highest total stats?",
-        ],
-    )
+    with gr.Blocks() as demo:
+        gr.Markdown("# Pokemon RAG Chatbot")
+        gr.Markdown("Ask questions about Pokemon using locally retrieved Pokedex data and an Ollama model.")
+        
+        with gr.Row():
+            with gr.Column(scale=2):
+                chatbot = gr.Chatbot(height=500)
+                msg = gr.Textbox(
+                    label="Your question",
+                    placeholder="Ask about Pokemon...",
+                    show_label=False,
+                )
+                with gr.Row():
+                    submit = gr.Button("Submit", variant="primary")
+                    clear = gr.Button("Clear")
+                
+                gr.Examples(
+                    examples=[
+                        "What type is Pikachu?",
+                        "Compare Bulbasaur and Charmander.",
+                        "Tell me about Gengar.",
+                        "Which retrieved Pokemon has the highest total stats?",
+                    ],
+                    inputs=msg,
+                )
+            
+            with gr.Column(scale=1):
+                gr.Markdown("### Top Retrieved Pokemon")
+                pokemon_image = gr.Image(
+                    label="",
+                    show_label=False,
+                )
+        
+        def respond(message: str, chat_history: list) -> tuple[list, str, str | None]:
+            answer_text, image_url = bot.answer(message, chat_history)
+            if chat_history is None:
+                chat_history = []
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": answer_text})
+            return chat_history, "", image_url
+        
+        submit.click(respond, [msg, chatbot], [chatbot, msg, pokemon_image])
+        msg.submit(respond, [msg, chatbot], [chatbot, msg, pokemon_image])
+        clear.click(lambda: ([], None), None, [chatbot, pokemon_image])
 
     demo.launch()
 

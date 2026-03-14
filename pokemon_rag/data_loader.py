@@ -236,6 +236,8 @@ def parse_pokedex_html(html: str) -> list[dict[str, Any]]:
             continue
 
         dex_number = _clean_text(cells[0].get_text(" ", strip=True))
+        img_tag = cells[0].select_one("img")
+        image_url = img_tag.get("src") if img_tag else None
         name_cell = cells[1]
         name = _clean_text(name_cell.get_text(" ", strip=True))
         profile_link = name_cell.select_one("a.ent-name") or name_cell.select_one("a")
@@ -253,6 +255,7 @@ def parse_pokedex_html(html: str) -> list[dict[str, Any]]:
         record = {
             "dex_number": dex_number,
             "name": name,
+            "image_url": image_url,
             "profile_url": profile_url,
             "types": type_values,
             "generation": generation_region["generation"],
