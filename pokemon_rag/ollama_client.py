@@ -10,6 +10,26 @@ class OllamaChatClient:
         self.model = model
         self.base_url = base_url.rstrip("/")
 
+    def _content_to_text(self, content: Any) -> str:
+        """Normalize Ollama response content into plain text."""
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, dict):
+            if "text" in content:
+                return str(content["text"]).strip()
+            return str(content).strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict) and "text" in item:
+                    parts.append(str(item["text"]))
+                else:
+                    parts.append(str(item))
+            return "\n".join(part.strip() for part in parts if str(part).strip())
+        return str(content).strip()
+
     def chat(self, messages: list[dict[str, str]], temperature: float = 0.2) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -26,4 +46,4 @@ class OllamaChatClient:
         response.raise_for_status()
 
         data = response.json()
-        return data["message"]["content"].strip()
+        return self._content_to_text(data["message"].get("content"))

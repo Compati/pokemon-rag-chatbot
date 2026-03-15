@@ -2,7 +2,6 @@ from pathlib import Path
 
 from pokemon_rag.data_loader import (
     enrich_records_with_evolutions,
-    enrich_records_with_moves,
     enrich_records_with_type_matchups,
     fetch_pokedex_html,
     parse_pokedex_html,
@@ -25,9 +24,6 @@ def main() -> None:
 
     print("Enriching records with type strengths and weaknesses...")
     records = enrich_records_with_type_matchups(records)
-
-    print("Enriching records with moves...")
-    records = enrich_records_with_moves(records)
 
     print(f"Saving {len(records)} records to {output_path}...")
     save_records(records, output_path)
