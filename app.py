@@ -211,7 +211,7 @@ class PokemonRAGChatbot:
 
         return normalized
 
-    def answer(self, user_message: str, history: list[list[str]] | None = None) -> str:
+    def answer(self, user_message: str, history: list[list[str]] | None = None) -> tuple[str, str | None]:
         normalized_history = self._normalize_history(history)
         results = self.retriever.search(user_message, top_k=5)
         context = format_context(results)
@@ -231,7 +231,15 @@ class PokemonRAGChatbot:
         )
         messages.append({"role": "user", "content": prompt})
 
-        return self.llm_client.chat(messages)
+        answer_text = self.llm_client.chat(messages)
+        
+        # Extract image_url from top result if available
+        image_url = None
+        if results and len(results) > 0:
+            top_metadata = results[0].document.get("metadata", {})
+            image_url = top_metadata.get("image_url")
+        
+        return answer_text, image_url
 
 
 def build_bot(model_name: str = "llama3.2") -> PokemonRAGChatbot:
@@ -250,8 +258,13 @@ def build_bot(model_name: str = "llama3.2") -> PokemonRAGChatbot:
 def main() -> None:
     bot = build_bot()
 
-    def chat_fn(message: str, history: list[list[str]]) -> str:
-        return bot.answer(message, history)
+    def respond(message: str, chat_history: list) -> tuple[list, str, str | None]:
+        answer_text, image_url = bot.answer(message, chat_history)
+        if chat_history is None:
+            chat_history = []
+        chat_history.append({"role": "user", "content": message})
+        chat_history.append({"role": "assistant", "content": answer_text})
+        return chat_history, "", image_url
 
     with gr.Blocks(title="Pokemon RAG Chatbot") as demo:
         gr.HTML(f"<style>{POKEMON_THEME_CSS}</style>")
@@ -281,28 +294,39 @@ def main() -> None:
         )
 
         gr.Markdown(
-            "**Pokédex Tips:** Try specific questions first for the best results, then use follow-ups like `What moves does that Pokémon have?`"
-        , elem_id="pokemon-tip")
-
-        gr.ChatInterface(
-            fn=chat_fn,
-            chatbot=gr.Chatbot(
-                height=500,
-                label="Pokémon Chat",
-                layout="bubble",
-            ),
-            textbox=gr.Textbox(
-                placeholder="Ask your Pokédex question here... e.g. What does Eevee evolve into?",
-                label="Trainer Question",
-            ),
-            examples=[
-                "What type is Pikachu?",
-                "What generation is Rowlet from?",
-                "What does Munchlax evolve into?",
-                "What is Charizard weak to?",
-                "What moves can Pikachu learn?",
-            ],
+            "**Pokédex Tips:** Try specific questions first for the best results, then use follow-ups like `What moves does that Pokémon have?`",
+            elem_id="pokemon-tip",
         )
+
+        with gr.Row():
+            with gr.Column(scale=2):
+                chatbot = gr.Chatbot(height=500, label="Pokémon Chat", layout="bubble")
+                msg = gr.Textbox(
+                    label="Trainer Question",
+                    placeholder="Ask your Pokédex question here... e.g. What does Eevee evolve into?",
+                )
+                with gr.Row():
+                    submit = gr.Button("Submit", variant="primary")
+                    clear = gr.Button("Clear")
+
+                gr.Examples(
+                    examples=[
+                        "What type is Pikachu?",
+                        "What generation is Rowlet from?",
+                        "What does Munchlax evolve into?",
+                        "What is Charizard weak to?",
+                        "What moves can Pikachu learn?",
+                    ],
+                    inputs=msg,
+                )
+
+            with gr.Column(scale=1):
+                gr.Markdown("### Top Retrieved Pokémon")
+                pokemon_image = gr.Image(label="", show_label=False)
+
+        submit.click(respond, [msg, chatbot], [chatbot, msg, pokemon_image])
+        msg.submit(respond, [msg, chatbot], [chatbot, msg, pokemon_image])
+        clear.click(lambda: ([], "", None), None, [chatbot, msg, pokemon_image])
 
         gr.HTML("</div></div>")
 
